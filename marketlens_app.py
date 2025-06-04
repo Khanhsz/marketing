@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from internet_search import search_duckduckgo
 
 # Load data
 uploaded_file = st.sidebar.file_uploader("Upload CSV data", type="csv")
@@ -7,6 +8,18 @@ if uploaded_file:
     data = pd.read_csv(uploaded_file)
 else:
     data = pd.read_csv("sample_data.csv")
+
+# Optional web search in the sidebar
+st.sidebar.subheader("\U0001F50D Search the Web")
+query = st.sidebar.text_input("Enter search term")
+if query:
+    with st.spinner("Searching..."):
+        links = search_duckduckgo(query)
+    if links:
+        for link in links:
+            st.sidebar.markdown(f"- [{link['title']}]({link['url']})")
+    else:
+        st.sidebar.write("No results found.")
 
 # App Config
 st.set_page_config(page_title="MarketLens 4C", layout="wide")
