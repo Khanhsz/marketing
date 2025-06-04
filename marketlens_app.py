@@ -1,20 +1,23 @@
 import streamlit as st
 import pandas as pd
+from pathlib import Path
 from internet_search import search_duckduckgo
-
-# App configuration must be the first Streamlit command
-st.set_page_config(page_title="MarketLens 4C", layout="wide")
 
 
 def main() -> None:
     """Render the MarketLens dashboard."""
+
+    # App configuration must be the first Streamlit command
+    st.set_page_config(page_title="MarketLens 4C", layout="wide")
+
+    data_path = Path(__file__).parent / "sample_data.csv"
 
     # Load data
     uploaded_file = st.sidebar.file_uploader("Upload CSV data", type="csv")
     if uploaded_file:
         data = pd.read_csv(uploaded_file)
     else:
-        data = pd.read_csv("sample_data.csv")
+        data = pd.read_csv(data_path)
 
     # Optional web search in the sidebar
     st.sidebar.subheader("\U0001F50D Search the Web")
