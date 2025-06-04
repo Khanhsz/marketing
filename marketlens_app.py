@@ -1,7 +1,11 @@
 import streamlit as st
 import pandas as pd
 from pathlib import Path
-from internet_search import search_duckduckgo, fetch_wikipedia_summary
+from internet_search import (
+    search_duckduckgo,
+    search_google,
+    fetch_wikipedia_summary,
+)
 
 
 def main() -> None:
@@ -31,7 +35,9 @@ def main() -> None:
     query = st.sidebar.text_input("Enter search term")
     if query:
         with st.spinner("Searching..."):
-            links = search_duckduckgo(query)
+            links = search_google(query)
+            if not links:
+                links = search_duckduckgo(query)
         if links:
             for link in links:
                 st.sidebar.markdown(f"- [{link['title']}]({link['url']})")
@@ -80,7 +86,9 @@ def main() -> None:
 
         with st.spinner("Tìm kiếm thông tin trên Internet..."):
             summary = fetch_wikipedia_summary(company)
-            links = search_duckduckgo(company)
+            links = search_google(company)
+            if not links:
+                links = search_duckduckgo(company)
         if summary:
             st.subheader("Thông tin từ Wikipedia")
             st.write(summary)

@@ -9,7 +9,8 @@ This is a simple Streamlit dashboard to experiment with market research data.
 * Sample dataset uses Vietnamese brand names with a `Group` column for segmentation.
 * Filter data by group in the sidebar.
 * Optional web search powered by the DuckDuckGo API.
-* When selecting a company, the app automatically retrieves a summary from Wikipedia and lists related links.
+* Google Custom Search integration when API credentials are provided.
+* When selecting a company, the app automatically retrieves a summary from Wikipedia and lists related links from the web.
 
 ## Running
 Install the requirements and launch the app **using Streamlit**. Running the
@@ -21,4 +22,6 @@ streamlit run marketlens_app.py
 ```
 
 Use the sidebar to upload your own CSV file or search the web for additional
-data points using DuckDuckGo.
+data points using DuckDuckGo. To enable Google search results, set the `GOOGLE_API_KEY`
+and `GOOGLE_CSE_ID` environment variables with your Custom Search credentials
+before launching the app.
