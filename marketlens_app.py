@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from pathlib import Path
+from sklearn.cluster import KMeans
 from internet_search import (
     search_duckduckgo,
     search_google,
@@ -58,12 +59,13 @@ def main() -> None:
                     unsafe_allow_html=True,
                 )
 
-    # Tabs for 4C
-    tab1, tab2, tab3, tab4 = st.tabs([
+    # Tabs for 4C plus AI insights
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📂 Category",
         "🏢 Company",
         "⚔️ Competitor",
         "🧍 Consumer",
+        "🧠 AI Insight",
     ])
 
     with tab1:
@@ -143,6 +145,16 @@ def main() -> None:
             placeholder="Ví dụ: 67% Gen Z tin tưởng KOL/KOC...",
         )
         st.bar_chart(data[data["Category"] == "F&B"].set_index("Brand")["Sales"])
+
+    with tab5:
+        st.header("🧠 AI Insight")
+        num_clusters = st.slider("Số cụm", 2, 5, 3)
+        model = KMeans(n_clusters=num_clusters, random_state=42)
+        clusters = model.fit_predict(data[["Sales"]])
+        ai_df = data.copy()
+        ai_df["Cluster"] = clusters
+        st.dataframe(ai_df)
+        st.bar_chart(ai_df.groupby("Cluster")["Sales"].sum())
 
 
 if __name__ == "__main__":
