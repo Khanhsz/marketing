@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 from internet_search import search_duckduckgo
 
+# App Config - must be the first Streamlit command
+st.set_page_config(page_title="MarketLens 4C", layout="wide")
+
 # Load data
 uploaded_file = st.sidebar.file_uploader("Upload CSV data", type="csv")
 if uploaded_file:
@@ -21,8 +24,6 @@ if query:
     else:
         st.sidebar.write("No results found.")
 
-# App Config
-st.set_page_config(page_title="MarketLens 4C", layout="wide")
 
 st.title("📊 MarketLens 4C – Market Research Dashboard")
 
