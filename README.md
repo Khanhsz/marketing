@@ -9,7 +9,8 @@ This is a simple Streamlit dashboard to experiment with market research data.
 * Optional web search powered by the DuckDuckGo API.
 
 ## Running
-Install the requirements and launch the app:
+Install the requirements and launch the app. The command must be run with
+`streamlit` so that page configuration works correctly:
 ```bash
 pip install streamlit pandas requests
 streamlit run marketlens_app.py
