@@ -33,18 +33,30 @@ def main() -> None:
     # Optional web search in the sidebar
     st.sidebar.subheader("\U0001F50D Search the Web")
     query = st.sidebar.text_input("Enter search term")
+    search_results = []
     if query:
         with st.spinner("Searching..."):
-            links = search_google(query)
-            if not links:
-                links = search_duckduckgo(query)
-        if links:
-            for link in links:
-                st.sidebar.markdown(f"- [{link['title']}]({link['url']})")
+            search_results = search_google(query)
+            if not search_results:
+                search_results = search_duckduckgo(query)
+        if search_results:
+            for link in search_results:
+                st.sidebar.markdown(
+                    f'<a href="{link["url"]}" target="_blank">{link["title"]}</a>',
+                    unsafe_allow_html=True,
+                )
         else:
             st.sidebar.write("No results found.")
 
     st.title("📊 MarketLens 4C – Market Research Dashboard")
+
+    if search_results:
+        with st.expander("Search Results"):
+            for link in search_results:
+                st.markdown(
+                    f'<a href="{link["url"]}" target="_blank">{link["title"]}</a>',
+                    unsafe_allow_html=True,
+                )
 
     # Tabs for 4C
     tab1, tab2, tab3, tab4 = st.tabs([
@@ -68,9 +80,10 @@ def main() -> None:
             placeholder="Ví dụ: Báo cáo McKinsey, Vietnam Report,...",
         )
         filtered = data[data["Category"] == industry]
-        st.dataframe(filtered)
+        col1, col2 = st.columns([2, 1])
+        col1.dataframe(filtered)
         if not filtered.empty:
-            st.bar_chart(filtered.groupby("Group")["Sales"].sum())
+            col2.bar_chart(filtered.groupby("Group")["Sales"].sum())
 
     with tab2:
         st.header("🏢 Company Analysis")
@@ -79,8 +92,9 @@ def main() -> None:
         )
         st.write(f"Đang phân tích doanh nghiệp **{company}**.")
         company_data = data[data["Brand"] == company]
-        st.dataframe(company_data)
-        st.markdown(
+        col1, col2 = st.columns([1, 1])
+        col1.dataframe(company_data)
+        col1.markdown(
             "Hiển thị SWOT, USP, Brand Positioning, mục tiêu truyền thông gần nhất."
         )
 
@@ -89,13 +103,17 @@ def main() -> None:
             links = search_google(company)
             if not links:
                 links = search_duckduckgo(company)
-        if summary:
-            st.subheader("Thông tin từ Wikipedia")
-            st.write(summary)
-        if links:
-            st.subheader("Kết quả tìm kiếm")
-            for link in links:
-                st.markdown(f"- [{link['title']}]({link['url']})")
+        with col2:
+            if summary:
+                st.subheader("Thông tin từ Wikipedia")
+                st.write(summary)
+            if links:
+                st.subheader("Kết quả tìm kiếm")
+                for link in links:
+                    st.markdown(
+                        f'<a href="{link["url"]}" target="_blank">{link["title"]}</a>',
+                        unsafe_allow_html=True,
+                    )
 
     with tab3:
         st.header("⚔️ Competitor Analysis")
