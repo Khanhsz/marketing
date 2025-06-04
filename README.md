@@ -7,6 +7,7 @@ This is a simple Streamlit dashboard to experiment with market research data.
 * Explore four perspectives: Category, Company, Competitor, and Consumer.
 * Basic charts and tables using Streamlit.
 * Optional web search powered by the DuckDuckGo API.
+* When selecting a company, the app automatically retrieves a summary from Wikipedia and lists related links.
 
 ## Running
 Install the requirements and launch the app **using Streamlit**. Running the

@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from pathlib import Path
-from internet_search import search_duckduckgo
+from internet_search import search_duckduckgo, fetch_wikipedia_summary
 
 
 def main() -> None:
@@ -71,6 +71,17 @@ def main() -> None:
         st.markdown(
             "Hiển thị SWOT, USP, Brand Positioning, mục tiêu truyền thông gần nhất."
         )
+
+        with st.spinner("Tìm kiếm thông tin trên Internet..."):
+            summary = fetch_wikipedia_summary(company)
+            links = search_duckduckgo(company)
+        if summary:
+            st.subheader("Thông tin từ Wikipedia")
+            st.write(summary)
+        if links:
+            st.subheader("Kết quả tìm kiếm")
+            for link in links:
+                st.markdown(f"- [{link['title']}]({link['url']})")
 
     with tab3:
         st.header("⚔️ Competitor Analysis")
