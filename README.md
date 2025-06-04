@@ -6,6 +6,8 @@ This is a simple Streamlit dashboard to experiment with market research data.
 * Upload a CSV file or use the sample dataset `sample_data.csv`.
 * Explore four perspectives: Category, Company, Competitor, and Consumer.
 * Basic charts and tables using Streamlit.
+* Sample dataset uses Vietnamese brand names with a `Group` column for segmentation.
+* Filter data by group in the sidebar.
 * Optional web search powered by the DuckDuckGo API.
 * When selecting a company, the app automatically retrieves a summary from Wikipedia and lists related links.
 

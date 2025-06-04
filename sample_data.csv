@@ -1,6 +1,8 @@
-Category,Brand,Sales,Segment
-F&B,BrandA,5000,Mass
-F&B,BrandB,3000,Premium
-Fashion,BrandC,4500,Mass
-Jewelry,BrandD,6000,Luxury
-Tech,BrandE,8000,Premium
+Category,Brand,Sales,Group
+F&B,Cà phê Trung Nguyên,5000,Bình dân
+F&B,Trà sữa Gong Cha,4200,Trung cấp
+Ride-hailing,Be,7000,Bình dân
+Fashion,Nón Sơn,3500,Trung cấp
+Tech,Điện Máy Xanh,9000,Bình dân
+Tech,FPT Shop,8000,Trung cấp
+Jewelry,PNJ,11000,Cao cấp

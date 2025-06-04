@@ -19,6 +19,13 @@ def main() -> None:
     else:
         data = pd.read_csv(data_path)
 
+    # Filter by consumer group/segment
+    group_options = sorted(data["Group"].unique())
+    selected_groups = st.sidebar.multiselect(
+        "Chọn nhóm phân khúc", group_options, default=group_options
+    )
+    data = data[data["Group"].isin(selected_groups)]
+
     # Optional web search in the sidebar
     st.sidebar.subheader("\U0001F50D Search the Web")
     query = st.sidebar.text_input("Enter search term")
@@ -44,8 +51,7 @@ def main() -> None:
     with tab1:
         st.header("📂 Category Analysis")
         industry = st.selectbox(
-            "Chọn ngành hàng:",
-            ["F&B", "Fashion", "Ride-hailing", "Jewelry", "Tech", "Education"],
+            "Chọn ngành hàng:", sorted(data["Category"].unique())
         )
         st.write(f"Bạn đang xem phân tích ngành hàng **{industry}**.")
         st.markdown(
@@ -58,7 +64,7 @@ def main() -> None:
         filtered = data[data["Category"] == industry]
         st.dataframe(filtered)
         if not filtered.empty:
-            st.bar_chart(filtered.set_index("Brand")["Sales"])
+            st.bar_chart(filtered.groupby("Group")["Sales"].sum())
 
     with tab2:
         st.header("🏢 Company Analysis")
@@ -88,7 +94,9 @@ def main() -> None:
         st.write("So sánh các đối thủ cạnh tranh trong ngành.")
         brands = sorted(data["Brand"].unique())
         main_brand = st.selectbox("Thương hiệu chính:", brands, index=0)
-        competitor = st.selectbox("Đối thủ cạnh tranh:", brands, index=1)
+        competitor = st.selectbox(
+            "Đối thủ cạnh tranh:", brands, index=min(1, len(brands) - 1)
+        )
         comparison = data[data["Brand"].isin([main_brand, competitor])]
         st.dataframe(comparison)
         st.markdown(
