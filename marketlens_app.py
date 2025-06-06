@@ -1,36 +1,161 @@
 import streamlit as st
+import pandas as pd
+from pathlib import Path
+from sklearn.cluster import KMeans
+from internet_search import (
+    search_duckduckgo,
+    search_google,
+    fetch_wikipedia_summary,
+)
 
-# App Config
-st.set_page_config(page_title="MarketLens 4C", layout="wide")
 
-st.title("📊 MarketLens 4C – Market Research Dashboard")
+def main() -> None:
+    """Render the MarketLens dashboard."""
 
-# Tabs for 4C
-tab1, tab2, tab3, tab4 = st.tabs(["📂 Category", "🏢 Company", "⚔️ Competitor", "🧍 Consumer"])
+    # App configuration must be the first Streamlit command
+    st.set_page_config(page_title="MarketLens 4C", layout="wide")
 
-with tab1:
-    st.header("📂 Category Analysis")
-    industry = st.selectbox("Chọn ngành hàng:", ["F&B", "Fashion", "Ride-hailing", "Jewelry", "Tech", "Education"])
-    st.write(f"Bạn đang xem phân tích ngành hàng **{industry}**.")
-    st.markdown("**Xu hướng phát triển**, **rào cản gia nhập**, **cơ hội tăng trưởng** sẽ hiển thị ở đây.")
-    st.text_area("Dán dữ liệu ngành hàng (nếu có):", placeholder="Ví dụ: Báo cáo McKinsey, Vietnam Report,...")
+    data_path = Path(__file__).parent / "sample_data.csv"
 
-with tab2:
-    st.header("🏢 Company Analysis")
-    company = st.text_input("Nhập tên công ty:", "PNJ")
-    st.write(f"Đang phân tích doanh nghiệp **{company}**.")
-    st.markdown("Hiển thị SWOT, USP, Brand Positioning, mục tiêu truyền thông gần nhất.")
+    # Load data
+    uploaded_file = st.sidebar.file_uploader("Upload CSV data", type="csv")
+    if uploaded_file:
+        data = pd.read_csv(uploaded_file)
+    else:
+        data = pd.read_csv(data_path)
 
-with tab3:
-    st.header("⚔️ Competitor Analysis")
-    st.write("So sánh các đối thủ cạnh tranh trong ngành.")
-    main_brand = st.text_input("Thương hiệu chính:", "PNJ")
-    competitor = st.text_input("Đối thủ cạnh tranh:", "DOJI")
-    st.markdown(f"**{main_brand}** vs **{competitor}** – so sánh định vị, truyền thông, sản phẩm, v.v.")
+    # Filter by consumer group/segment
+    group_options = sorted(data["Group"].unique())
+    selected_groups = st.sidebar.multiselect(
+        "Chọn nhóm phân khúc", group_options, default=group_options
+    )
+    data = data[data["Group"].isin(selected_groups)]
 
-with tab4:
-    st.header("🧍 Consumer Insight")
-    gen = st.selectbox("Chọn nhóm người tiêu dùng:", ["Gen Z", "Gen Y", "Gen X"])
-    st.write(f"Bạn đang xem thông tin hành vi người tiêu dùng thuộc nhóm **{gen}**.")
-    st.markdown("Hiển thị sở thích, hành vi tiêu dùng, xu hướng nổi bật, và insight marketing.")
-    st.text_area("Dán khảo sát hoặc mô tả hành vi người dùng:", placeholder="Ví dụ: 67% Gen Z tin tưởng KOL/KOC...")
+    # Optional web search in the sidebar
+    st.sidebar.subheader("\U0001F50D Search the Web")
+    query = st.sidebar.text_input("Enter search term")
+    search_results = []
+    if query:
+        with st.spinner("Searching..."):
+            search_results = search_google(query)
+            if not search_results:
+                search_results = search_duckduckgo(query)
+        if search_results:
+            for link in search_results:
+                st.sidebar.markdown(
+                    f'<a href="{link["url"]}" target="_blank">{link["title"]}</a>',
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.sidebar.write("No results found.")
+
+    st.title("📊 MarketLens 4C – Market Research Dashboard")
+
+    if search_results:
+        with st.expander("Search Results"):
+            for link in search_results:
+                st.markdown(
+                    f'<a href="{link["url"]}" target="_blank">{link["title"]}</a>',
+                    unsafe_allow_html=True,
+                )
+
+    # Tabs for 4C plus AI insights
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📂 Category",
+        "🏢 Company",
+        "⚔️ Competitor",
+        "🧍 Consumer",
+        "🧠 AI Insight",
+    ])
+
+    with tab1:
+        st.header("📂 Category Analysis")
+        industry = st.selectbox(
+            "Chọn ngành hàng:", sorted(data["Category"].unique())
+        )
+        st.write(f"Bạn đang xem phân tích ngành hàng **{industry}**.")
+        st.markdown(
+            "**Xu hướng phát triển**, **rào cản gia nhập**, **cơ hội tăng trưởng** sẽ hiển thị ở đây."
+        )
+        st.text_area(
+            "Dán dữ liệu ngành hàng (nếu có):",
+            placeholder="Ví dụ: Báo cáo McKinsey, Vietnam Report,...",
+        )
+        filtered = data[data["Category"] == industry]
+        col1, col2 = st.columns([2, 1])
+        col1.dataframe(filtered)
+        if not filtered.empty:
+            col2.bar_chart(filtered.groupby("Group")["Sales"].sum())
+
+    with tab2:
+        st.header("🏢 Company Analysis")
+        company = st.selectbox(
+            "Chọn thương hiệu:", sorted(data["Brand"].unique())
+        )
+        st.write(f"Đang phân tích doanh nghiệp **{company}**.")
+        company_data = data[data["Brand"] == company]
+        col1, col2 = st.columns([1, 1])
+        col1.dataframe(company_data)
+        col1.markdown(
+            "Hiển thị SWOT, USP, Brand Positioning, mục tiêu truyền thông gần nhất."
+        )
+
+        with st.spinner("Tìm kiếm thông tin trên Internet..."):
+            summary = fetch_wikipedia_summary(company)
+            links = search_google(company)
+            if not links:
+                links = search_duckduckgo(company)
+        with col2:
+            if summary:
+                st.subheader("Thông tin từ Wikipedia")
+                st.write(summary)
+            if links:
+                st.subheader("Kết quả tìm kiếm")
+                for link in links:
+                    st.markdown(
+                        f'<a href="{link["url"]}" target="_blank">{link["title"]}</a>',
+                        unsafe_allow_html=True,
+                    )
+
+    with tab3:
+        st.header("⚔️ Competitor Analysis")
+        st.write("So sánh các đối thủ cạnh tranh trong ngành.")
+        brands = sorted(data["Brand"].unique())
+        main_brand = st.selectbox("Thương hiệu chính:", brands, index=0)
+        competitor = st.selectbox(
+            "Đối thủ cạnh tranh:", brands, index=min(1, len(brands) - 1)
+        )
+        comparison = data[data["Brand"].isin([main_brand, competitor])]
+        st.dataframe(comparison)
+        st.markdown(
+            f"**{main_brand}** vs **{competitor}** – so sánh định vị, truyền thông, sản phẩm, v.v."
+        )
+
+    with tab4:
+        st.header("🧍 Consumer Insight")
+        gen = st.selectbox("Chọn nhóm người tiêu dùng:", ["Gen Z", "Gen Y", "Gen X"])
+        st.write(
+            f"Bạn đang xem thông tin hành vi người tiêu dùng thuộc nhóm **{gen}**."
+        )
+        st.markdown(
+            "Hiển thị sở thích, hành vi tiêu dùng, xu hướng nổi bật, và insight marketing."
+        )
+        st.text_area(
+            "Dán khảo sát hoặc mô tả hành vi người dùng:",
+            placeholder="Ví dụ: 67% Gen Z tin tưởng KOL/KOC...",
+        )
+        st.bar_chart(data[data["Category"] == "F&B"].set_index("Brand")["Sales"])
+
+    with tab5:
+        st.header("🧠 AI Insight")
+        num_clusters = st.slider("Số cụm", 2, 5, 3)
+        model = KMeans(n_clusters=num_clusters, random_state=42)
+        clusters = model.fit_predict(data[["Sales"]])
+        ai_df = data.copy()
+        ai_df["Cluster"] = clusters
+        st.dataframe(ai_df)
+        st.bar_chart(ai_df.groupby("Cluster")["Sales"].sum())
+
+
+if __name__ == "__main__":
+    main()
