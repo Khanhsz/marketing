@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import streamlit as st
 from google import genai
 from google.genai import types
+from slide_layout import create_deck, show as show_slide_deck
 
 MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 CRITIQUE_ROUNDS = 3
@@ -325,8 +326,8 @@ def linked(text, sources):
     return re.sub(r"\[(S\d+)\](?!\()", lambda m: "[" + m.group(1) + "](" + by_id[m.group(1)] + ")" if m.group(1) in by_id else m.group(0), text)
 
 st.set_page_config(page_title="Market Research AI Lab", page_icon="📊", layout="wide")
-st.title("📊 Market Research AI Lab")
-st.caption("8 Gemini agents · 3 vòng phản biện · Mỗi mục ≥5 Research Insights + 1 Key Takeaway")
+st.title("🎯 Marketing Case Solver AI")
+st.caption("Gemini 3.5 Flash-Lite · 3 vòng phản biện · Research → Marketing Case Pitch Slides 16:9")
 password = os.getenv("APP_PASSWORD", "").strip()
 if password and not st.session_state.get("access", False):
     with st.form("login"):
@@ -349,7 +350,7 @@ with st.sidebar:
     model = st.selectbox("Gemini model", options=["gemini-3.5-flash-lite", "Auto", "gemini-3.6-flash", "gemini-3.8-flash"], index=0)
     search = st.toggle("Google Search grounding (cần gói hỗ trợ)", value=False,
                        help="Các model Gemini 3.x hiện không hỗ trợ Google Search grounding ở Free Tier. Để tắt lỗi 403, để chế độ này OFF.")
-    st.caption("Free Tier Gemini 3.x: chạy AI không bật Grounding; nếu cần tìm nguồn web tự động, tài khoản Google API có thể phải kích hoạt thanh toán.")
+    st.caption("Mặc định Gemini 3.5 Flash-Lite. Slide Architect cũng dùng cùng model. Mọi lượt gọi đều chịu quota của API key.")
     if st.button("🔍 Kiểm tra API & model khả dụng"):
         if not key:
             st.error("Chưa có GEMINI_API_KEY.")
@@ -372,7 +373,7 @@ with st.form("brief"):
     with right:
         brand = st.text_input("Brand / competitors", value="")
         period = st.text_input("Giai đoạn nghiên cứu", value="2024–2026")
-    start = st.form_submit_button("🚀 Run Market Research", type="primary", use_container_width=True)
+    start = st.form_submit_button("🚀 Solve Marketing Case & Build Slides", type="primary", use_container_width=True)
 if start:
     if len(topic.strip()) < 5 or not market.strip() or not key:
         st.error("Cần Research brief, thị trường và Gemini API key.")
@@ -380,8 +381,19 @@ if start:
         with st.status("Multi-agent đang nghiên cứu...", expanded=True) as status:
             try:
                 result = research(topic, market, audience, brand, period, key, model, search, status.write)
+                status.write("Đang dựng deck 15 slides 16:9 từ kết quả đã phản biện...")
+                client = genai.Client(api_key=key)
+                selected = result["model"]
+                case_brief = "\n".join((topic, "Thị trường: "+market, "Target: "+audience,
+                                         "Brand: "+brand, "Period: "+period))
+                def generate_slide(prompt):
+                    _, answer = request(client, selected, prompt, max_tokens=12500)
+                    return answer
+                deck = create_deck(generate_slide, result["report"], case_brief,
+                                   result["sources"], result["audit"], count=15)
+                result["slide_deck"] = deck
                 st.session_state["result"] = result
-                status.update(label="Đã hoàn thành!", state="complete", expanded=False)
+                status.update(label="Đã hoàn thành research + deck 15 slides!", state="complete", expanded=False)
             except Exception as error:
                 status.update(label="Chạy nghiên cứu chưa thành công", state="error")
                 st.error(str(error))
@@ -389,7 +401,9 @@ result = st.session_state.get("result")
 if result:
     for warning in result["warnings"]:
         st.warning(warning)
-    t1, t2, t3, t4, t5 = st.tabs(["📄 Final report", "🔁 Phản biện (3 vòng)", "🤖 Agents", "🛡️ Audit", "🔗 Sources"])
+    t0, t1, t2, t3, t4, t5 = st.tabs(["🖥️ Case Pitch Slides", "📄 Research", "🔁 Phản biện (3 vòng)", "🤖 Agents", "🛡️ Audit", "🔗 Sources"])
+    with t0:
+        show_slide_deck(result["slide_deck"], result["sources"])
     with t1:
         st.success(f"Đã hoàn tất {result.get('critique_rounds_completed', 0)}/3 vòng phản biện; mỗi mục ≥{result.get('insights_required_per_section', 5)} Research Insights + một câu Key Takeaway (đã kiểm tra format).")
         st.markdown(linked(result["report"], result["sources"]))
