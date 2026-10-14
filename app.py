@@ -12,6 +12,32 @@ from google.genai import types
 
 MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 CRITIQUE_ROUNDS = 3
+INSIGHTS_PER_SECTION = 5
+REPORT_SECTIONS = (
+    "Executive Summary",
+    "Market Landscape",
+    "Consumer Insights",
+    "Competitor Analysis",
+    "Trends & PESTEL",
+    "SWOT Analysis",
+    "Strategic Opportunities",
+    "Recommendations",
+    "Limitations & Data Gaps",
+)
+REPORT_FORMAT_GUIDE = """
+ĐỊNH DẠNG BẮT BUỘC CHO MỌI MỤC CỦA BÁO CÁO:
+- Phải có ĐỦ 9 mục theo ĐÚNG tên và thứ tự của REPORT_SECTIONS, mỗi mục dùng heading Markdown cấp 2: '## 1. Executive Summary', '## 2. Market Landscape', ... '## 9. Limitations & Data Gaps'.
+- TRONG MỖI MỤC: tiêu đề '**Research Insights**', sau đó TỐI THIỂU 5 insight KHÁC NHAU (nghĩa là hơn 4 ý). Viết đúng mẫu mỗi ý trên một dòng:
+- **Insight 1:** [Fact / Inference / Evidence Gap] nội dung cụ thể.
+- **Insight 2:** [Fact / Inference / Evidence Gap] nội dung cụ thể.
+...
+- **Insight 5:** [Fact / Inference / Evidence Gap] nội dung cụ thể.
+- KẾT THÚC MỖI MỤC bằng MỘT dòng '**Key Takeaway:**' chứa ĐÚNG MỘT CÂU kết luận đắt giá, súc tích, có ý nghĩa chiến lược; không thêm nội dung sau takeaway trong cùng mục.
+- Có thể thêm bảng, dữ liệu định lượng và giải thích NGẮN trước Research Insights; đối với đối thủ nên thêm bảng comparison nếu chứng cứ cho phép.
+- Mỗi insight có thể kèm mã nguồn [S#] HỢP LỆ nếu có bằng chứng. Không tự tạo URL/mã nguồn/số liệu, không biến assumption thành fact, không lặp ý chỉ để đủ 5. Khi thiếu chứng cứ, phân tích 5 góc độ GIỚI HẠN thông tin khác nhau, ghi rõ [Evidence Gap] thay vì tưởng tượng.
+- Key Takeaway không phải một ý Research Insight mới. Không được gộp các mục, không được bỏ mục vì thiếu dữ liệu.
+Tên 9 mục: Executive Summary; Market Landscape; Consumer Insights; Competitor Analysis; Trends & PESTEL; SWOT Analysis; Strategic Opportunities; Recommendations; Limitations & Data Gaps.
+"""
 PREFERRED_MODELS = ("gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite")
 
 def available_text_models(client):
@@ -43,7 +69,7 @@ ROLES = {
 }
 PLAN = "Bạn là Research Planner. Lập research plan ngắn tiếng Việt: business questions, phạm vi, 4 streams, giả định, chỉ tiêu cần kiểm chứng. Chưa đưa dữ liệu không nguồn."
 SYNTH = """Bạn là Strategy Synthesizer. Tổng hợp từ evidence thành báo cáo tiếng Việt với Executive Summary, Market Landscape, Consumers, Competitor Comparison (bảng), Trends/PESTEL, SWOT, Strategic Opportunities, Recommendations, Limitations.
-QUAN TRỌNG: chỉ đánh dấu nguồn bằng [S1], [S2], ... từ danh mục có thật trong evidence. Không tạo nguồn, URL, tỷ lệ hay thị phần. Mọi số liệu quan trọng cần kèm nguồn hợp lệ. Phân biệt fact / inference / hypothesis. Khi không có đủ chứng cứ, ghi rõ thiếu dữ liệu."""
+QUAN TRỌNG: chỉ đánh dấu nguồn bằng [S1], [S2], ... từ danh mục có thật trong evidence. Không tạo nguồn, URL, tỷ lệ hay thị phần. Mọi số liệu quan trọng cần kèm nguồn hợp lệ. Phân biệt fact / inference / hypothesis. Khi không có đủ chứng cứ, ghi rõ thiếu dữ liệu. TUÂN THỦ REPORT_FORMAT_GUIDE và đủ 5 insight khác nhau + một Key Takeaway cuối mỗi mục."""
 AUDIT = """Bạn là Evidence Auditor độc lập. Kiểm tra tối thiểu 5 kết luận và số liệu quan trọng. Đánh dấu Supported / Weak / Unverified; nói rõ các trường hợp thiếu năm, khu vực, định nghĩa, lỗi suy luận, sai mã nguồn. Không tự nhận đã mở toàn bộ tài liệu. Kết luận cần kiểm tra gì trước khi pitching."""
 
 CRITIC = """Bạn là Critical Reviewer Agent, độc lập và có nhiệm vụ CHẤT VẤN bản báo cáo market research trước khi phát hành.
@@ -51,12 +77,71 @@ Hãy đóng vai người phản biện khó tính, KHÔNG mặc định đồng 
 Kiểm tra: (1) sự đúng đắn của số liệu, định nghĩa, mốc thời gian và địa lý; (2) mã nguồn [S#] có nằm trong danh mục nguồn cung cấp không, có khớp với khẳng định không; (3) phân biệt evidence và suy luận; (4) logic nhân-quả, sự thiên lệch, đối thủ bị bỏ sót; (5) customer insights có đủ bằng chứng; (6) tính khả thi, hạn chế và ưu tiên của khuyến nghị.
 Không sáng tạo nguồn, URL hoặc số liệu; không tuyên bố đã trực tiếp kiểm tra website hay tài liệu gốc. Nếu không có grounding, nêu rõ giới hạn xác minh.
 Trả về tiếng Việt, gồm: Verdict (Ready / Needs revision / High risk), Các vấn đề xếp hạng P0/P1/P2 với trích đoạn báo cáo cần sửa, lý do, hành động sửa cụ thể, Các luận điểm có đủ chứng cứ, Những gì vẫn chưa thể xác minh.
+BẮT BUỘC phản biện chất lượng cấu trúc theo từng mục: báo cáo có đúng 9 headings, tối thiểu 5 Research Insights khác biệt trong MỖI mục, và đúng một câu Key Takeaway ở cuối MỖI mục không? Nếu thiếu, ghi lỗi P1 kèm tên mục, số lượng thiếu và cách khắc phục, không tự bịa thêm số liệu.
 Đây là vòng phản biện bắt buộc: ngay cả khi không thấy lỗi nghiêm trọng, hãy nêu các giả định cần làm rõ. Đánh giá BẢN HIỆN TẠI, không phải bản nháp cũ."""
 
 REVISE = """Bạn là Strategy Synthesizer được giao sửa bản báo cáo sau phản biện độc lập.
 Viết lại TOÀN BỘ báo cáo tiếng Việt đã chỉnh sửa, giữ cấu trúc Executive Summary, Market Landscape, Consumers, Competitor Comparison, Trends, SWOT, Strategic Opportunities, Recommendations, Limitations.
 Giải quyết từng vấn đề P0/P1/P2 hợp lý; nếu thiếu dữ liệu để khắc phục thì hạ mức khẳng định và đưa vào Limitations, TUYỆT ĐỐI không sáng tác thông tin, số liệu hay nguồn.
-Chỉ sử dụng chứng cứ research được cung cấp, chỉ trích nguồn bằng [S#] có trong danh mục. Không biến giả thuyết thành dữ kiện. Không đổi phạm vi ngành, địa lý, target hoặc giai đoạn. Báo cáo cần hoàn chỉnh và có thể đứng độc lập; không trả về danh sách thay đổi hoặc nhận xét về việc sửa."""
+Chỉ sử dụng chứng cứ research được cung cấp, chỉ trích nguồn bằng [S#] có trong danh mục. Không biến giả thuyết thành dữ kiện. Không đổi phạm vi ngành, địa lý, target hoặc giai đoạn. Báo cáo cần hoàn chỉnh và có thể đứng độc lập; không trả về danh sách thay đổi hoặc nhận xét về việc sửa. Giữ ĐÚNG đủ 9 mục, mỗi mục có ÍT NHẤT 5 Research Insights khác nhau và kết thúc bằng MỘT câu **Key Takeaway:** đúng REPORT_FORMAT_GUIDE."""
+
+
+def validate_report_structure(report):
+    """Mechanical format QA; checks headings, insight count/order, and one takeaway per section."""
+    issues = []
+    header_matches = list(re.finditer(r"(?m)^##\s*(?:\d+\s*[.)]\s*)?([^\n#]+?)\s*$", report))
+    found = {}
+    for idx, hit in enumerate(header_matches):
+        title = hit.group(1).strip()
+        if title in REPORT_SECTIONS:
+            end = header_matches[idx + 1].start() if idx + 1 < len(header_matches) else len(report)
+            if title in found:
+                issues.append("Mục '" + title + "' xuất hiện nhiều lần.")
+            else:
+                found[title] = report[hit.end():end]
+
+    for title in REPORT_SECTIONS:
+        if title not in found:
+            issues.append("Thiếu mục: " + title)
+            continue
+        content = found[title]
+        marker = re.search(r"(?mi)^\s*\*\*Research Insights\*\*\s*$", content)
+        takeaway_lines = re.findall(
+            r"(?mi)^\s*\*\*Key Takeaway:\*\*\s*(.*?)\s*$", content
+        )
+        if not marker:
+            issues.append(title + ": thiếu heading **Research Insights**.")
+            continue
+        # Only count properly numbered insights between the insights header and takeaway.
+        endpos = re.search(r"(?mi)^\s*\*\*Key Takeaway:\*\*", content)
+        if endpos is None:
+            issues.append(title + ": thiếu dòng **Key Takeaway:**.")
+            insight_text = content[marker.end():]
+        else:
+            insight_text = content[marker.end():endpos.start()]
+        insight_numbers = [int(n) for n in re.findall(
+            r"(?mi)^\s*[-*]\s+\*\*Insight\s+(\d+):\*\*\s*\S.+$", insight_text
+        )]
+        if len(insight_numbers) < INSIGHTS_PER_SECTION or insight_numbers != list(range(1, len(insight_numbers) + 1)):
+            issues.append(
+                title + ": Research Insights phải có ít nhất " + str(INSIGHTS_PER_SECTION)
+                + " ý đánh số liên tục theo mẫu '- **Insight N:**'; hiện là "
+                + str(insight_numbers) + "."
+            )
+        if len(takeaway_lines) != 1 or not takeaway_lines[0].strip():
+            issues.append(title + ": cần đúng một Key Takeaway không rỗng.")
+        elif endpos is not None:
+            after = content[endpos.end():].strip()
+            # The takeaway must be the last nonempty line of its section.
+            if len(after.splitlines()) > 1:
+                issues.append(title + ": Key Takeaway chưa nằm ở cuối mục.")
+            takeaway = takeaway_lines[0].strip()
+            if not takeaway.endswith((".", "!", "?")):
+                issues.append(title + ": Key Takeaway cần là một câu hoàn chỉnh kết thúc bằng dấu câu.")
+            # Multiple sentence boundaries are usually a sign of an overly long takeaway.
+            if re.search(r"[.!?]\s+\S", takeaway):
+                issues.append(title + ": Key Takeaway dài hơn một câu.")
+    return issues
 
 
 def request(client, model, prompt, search=False, max_tokens=4500):
@@ -120,8 +205,8 @@ def research(topic, market, audience, brand, period, key, model, search, progres
     progress("2/7 — 4 Research Agents (song song tối đa 2)...")
     def do_role(name, directive):
         prompt = ("Vai trò: " + name + ". " + directive
-                  + "\nTrình bày 5–8 findings có evidence, giới hạn và implications."
-                  + " Nếu không biết hoặc thiếu nguồn, ghi CHƯA KIỂM CHỨNG. KHÔNG sáng tác số liệu."
+                  + "\nTrình bày tối thiểu 5 Research Insights DISTINCT có evidence, giới hạn và implications theo mẫu '- **Insight 1:** ...', ... '- **Insight 5:** ...'; chốt bằng một câu **Key Takeaway:**."
+                  + " Nếu không biết hoặc thiếu nguồn, ghi CHƯA KIỂM CHỨNG và mô tả đúng research gap. KHÔNG sáng tác số liệu."
                   + "\n" + context + "\nRESEARCH PLAN:\n" + plan)
         resp, answer = request(client, selected_model, prompt, search=search)
         return name, answer, evidence_sources(resp, name)
@@ -151,7 +236,7 @@ def research(topic, market, audience, brand, period, key, model, search, progres
                         + "\nGROUNDED SOURCES:\n" + ("\n".join(references) or "KHÔNG CÓ"))
     progress("3/7 — Strategy Synthesizer tạo báo cáo ban đầu...")
     combined = "\n\n".join(evidence)
-    _, report = request(client, selected_model, SYNTH + "\n" + context + "\n" + combined[:45000], max_tokens=7500)
+    _, report = request(client, selected_model, SYNTH + "\n" + REPORT_FORMAT_GUIDE + "\n" + context + "\n" + combined[:45000], max_tokens=11000)
     original_report = report
     refs = "\n".join("[" + s["id"] + "] " + s["title"] + " " + s["url"] for s in sources)
     # Strictly sequential: Critic_i -> Revise_i -> Critic_(i+1). Never finalize an unchecked revision.
@@ -163,27 +248,51 @@ def research(topic, market, audience, brand, period, key, model, search, progres
             for entry in review_history
         )
         critic_prompt = (
-            CRITIC + "\n\nRESEARCH BRIEF:\n" + context
+            CRITIC + "\n\n" + REPORT_FORMAT_GUIDE + "\n\nRESEARCH BRIEF:\n" + context
             + "\n\nEVIDENCE GỐC (chỉ dữ liệu này làm căn cứ):\n" + combined[:38000]
             + "\n\nDANH MỤC MÃ NGUỒN HỢP LỆ:\n" + (refs or "KHÔNG CÓ")
             + "\n\nNHỮNG PHẢN BIỆN VÒNG TRƯỚC (để không lặp máy móc):\n"
             + (history[:6000] or "Chưa có")
             + "\n\nBÁO CÁO CẦN PHẢN BIỆN VÒNG NÀY:\n" + report[:28000]
         )
-        _, critique = request(client, selected_model, critic_prompt, max_tokens=3500)
+        _, critique = request(client, selected_model, critic_prompt, max_tokens=4500)
         progress(f"{iteration + 3}/7 — Strategy Synthesizer chỉnh sửa sau vòng {iteration}/{CRITIQUE_ROUNDS}...")
         revision_prompt = (
-            REVISE + "\n\nRESEARCH BRIEF:\n" + context
+            REVISE + "\n\n" + REPORT_FORMAT_GUIDE + "\n\nRESEARCH BRIEF:\n" + context
             + "\n\nEVIDENCE GỐC:\n" + combined[:38000]
             + "\n\nDANH MỤC MÃ NGUỒN HỢP LỆ:\n" + (refs or "KHÔNG CÓ")
             + "\n\nBÁO CÁO HIỆN TẠI:\n" + report[:28000]
             + "\n\nPHẢN BIỆN CẦN XỬ LÝ:\n" + critique[:15000]
         )
-        _, revised_report = request(client, selected_model, revision_prompt, max_tokens=7500)
+        _, revised_report = request(client, selected_model, revision_prompt, max_tokens=11000)
         if not revised_report.strip():
             raise RuntimeError(f"Vòng phản biện {iteration}: model không trả về báo cáo sửa. Dừng, không finalize.")
         report = revised_report
         review_history.append({"round": iteration, "critique": critique, "revised_report": report})
+    # Exactly three critique/revision loops have finished; formatting repair is NOT another critique round.
+    format_issues = validate_report_structure(report)
+    for repair_number in range(1, 3):
+        if not format_issues:
+            break
+        progress(f"Kiểm tra bố cục: đang sửa {len(format_issues)} lỗi (lượt {repair_number}/2)...")
+        repair_prompt = (
+            "Bạn là Report Structure Formatter, không phải Critical Reviewer. Không thêm một vòng phản biện."
+            + "\nSửa TOÀN BỘ Markdown báo cáo theo layout BẮT BUỘC sau. Trả về chỉ toàn bộ báo cáo, không giải thích."
+            + "\n\n" + REPORT_FORMAT_GUIDE
+            + "\n\nNHỮNG LỖI ĐỊNH DẠNG TỰ ĐỘNG PHÁT HIỆN:\n- " + "\n- ".join(format_issues)
+            + "\n\nRESEARCH BRIEF:\n" + context
+            + "\n\nEVIDENCE VÀ NGUỒN GỐC (CHỈ DÙNG NHỮNG DỮ LIỆU NÀY):\n" + combined[:34000]
+            + "\n\nDANH MỤC SOURCE ID HỢP LỆ:\n" + (refs or "KHÔNG CÓ")
+            + "\n\nREPORT HIỆN TẠI:\n" + report[:32000]
+        )
+        _, candidate_report = request(client, selected_model, repair_prompt, max_tokens=11000)
+        report = candidate_report
+        format_issues = validate_report_structure(report)
+    if format_issues:
+        raise RuntimeError(
+            "Báo cáo chưa đạt yêu cầu 5 Research Insights + 1 Key Takeaway cho từng mục sau 3 vòng phản biện. "
+            + "Không finalize để tránh thiếu thông tin. Lỗi: " + " | ".join(format_issues)[:1100]
+        )
     progress("7/7 — Evidence Auditor kiểm tra bản cuối sau 3 vòng phản biện...")
     _, audit = request(client, selected_model, AUDIT + "\nBRIEF:\n" + context
                        + "\nREPORT FINAL SAU 3 VÒNG PHẢN BIỆN:\n" + report[:28000]
@@ -206,7 +315,10 @@ def research(topic, market, audience, brand, period, key, model, search, progres
             "model": selected_model, "available_models": permitted_models,
             "plan": plan, "agents": results, "initial_report": original_report,
             "review_history": review_history, "critique_rounds_completed": len(review_history),
-            "report": report, "audit": audit, "sources": sources, "warnings": warnings}
+            "report": report, "report_structure_valid": True,
+            "insights_required_per_section": INSIGHTS_PER_SECTION,
+            "report_sections": list(REPORT_SECTIONS),
+            "audit": audit, "sources": sources, "warnings": warnings}
 
 def linked(text, sources):
     by_id = {s["id"]: s["url"] for s in sources}
@@ -214,7 +326,7 @@ def linked(text, sources):
 
 st.set_page_config(page_title="Market Research AI Lab", page_icon="📊", layout="wide")
 st.title("📊 Market Research AI Lab")
-st.caption("8 Gemini agents · 3 vòng phản biện độc lập và chỉnh sửa · Final evidence audit")
+st.caption("8 Gemini agents · 3 vòng phản biện · Mỗi mục ≥5 Research Insights + 1 Key Takeaway")
 password = os.getenv("APP_PASSWORD", "").strip()
 if password and not st.session_state.get("access", False):
     with st.form("login"):
@@ -279,7 +391,7 @@ if result:
         st.warning(warning)
     t1, t2, t3, t4, t5 = st.tabs(["📄 Final report", "🔁 Phản biện (3 vòng)", "🤖 Agents", "🛡️ Audit", "🔗 Sources"])
     with t1:
-        st.success(f"Đã hoàn tất {result.get('critique_rounds_completed', 0)}/3 vòng phản biện và chỉnh sửa trước khi finalize.")
+        st.success(f"Đã hoàn tất {result.get('critique_rounds_completed', 0)}/3 vòng phản biện; mỗi mục ≥{result.get('insights_required_per_section', 5)} Research Insights + một câu Key Takeaway (đã kiểm tra format).")
         st.markdown(linked(result["report"], result["sources"]))
     with t2:
         st.markdown("### Critical Reviewer Agent — 3 vòng phản biện độc lập")
