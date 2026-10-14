@@ -11,6 +11,7 @@ from google import genai
 from google.genai import types
 
 MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+CRITIQUE_ROUNDS = 3
 PREFERRED_MODELS = ("gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite")
 
 def available_text_models(client):
@@ -44,6 +45,19 @@ PLAN = "Bạn là Research Planner. Lập research plan ngắn tiếng Việt: b
 SYNTH = """Bạn là Strategy Synthesizer. Tổng hợp từ evidence thành báo cáo tiếng Việt với Executive Summary, Market Landscape, Consumers, Competitor Comparison (bảng), Trends/PESTEL, SWOT, Strategic Opportunities, Recommendations, Limitations.
 QUAN TRỌNG: chỉ đánh dấu nguồn bằng [S1], [S2], ... từ danh mục có thật trong evidence. Không tạo nguồn, URL, tỷ lệ hay thị phần. Mọi số liệu quan trọng cần kèm nguồn hợp lệ. Phân biệt fact / inference / hypothesis. Khi không có đủ chứng cứ, ghi rõ thiếu dữ liệu."""
 AUDIT = """Bạn là Evidence Auditor độc lập. Kiểm tra tối thiểu 5 kết luận và số liệu quan trọng. Đánh dấu Supported / Weak / Unverified; nói rõ các trường hợp thiếu năm, khu vực, định nghĩa, lỗi suy luận, sai mã nguồn. Không tự nhận đã mở toàn bộ tài liệu. Kết luận cần kiểm tra gì trước khi pitching."""
+
+CRITIC = """Bạn là Critical Reviewer Agent, độc lập và có nhiệm vụ CHẤT VẤN bản báo cáo market research trước khi phát hành.
+Hãy đóng vai người phản biện khó tính, KHÔNG mặc định đồng ý với báo cáo.
+Kiểm tra: (1) sự đúng đắn của số liệu, định nghĩa, mốc thời gian và địa lý; (2) mã nguồn [S#] có nằm trong danh mục nguồn cung cấp không, có khớp với khẳng định không; (3) phân biệt evidence và suy luận; (4) logic nhân-quả, sự thiên lệch, đối thủ bị bỏ sót; (5) customer insights có đủ bằng chứng; (6) tính khả thi, hạn chế và ưu tiên của khuyến nghị.
+Không sáng tạo nguồn, URL hoặc số liệu; không tuyên bố đã trực tiếp kiểm tra website hay tài liệu gốc. Nếu không có grounding, nêu rõ giới hạn xác minh.
+Trả về tiếng Việt, gồm: Verdict (Ready / Needs revision / High risk), Các vấn đề xếp hạng P0/P1/P2 với trích đoạn báo cáo cần sửa, lý do, hành động sửa cụ thể, Các luận điểm có đủ chứng cứ, Những gì vẫn chưa thể xác minh.
+Đây là vòng phản biện bắt buộc: ngay cả khi không thấy lỗi nghiêm trọng, hãy nêu các giả định cần làm rõ. Đánh giá BẢN HIỆN TẠI, không phải bản nháp cũ."""
+
+REVISE = """Bạn là Strategy Synthesizer được giao sửa bản báo cáo sau phản biện độc lập.
+Viết lại TOÀN BỘ báo cáo tiếng Việt đã chỉnh sửa, giữ cấu trúc Executive Summary, Market Landscape, Consumers, Competitor Comparison, Trends, SWOT, Strategic Opportunities, Recommendations, Limitations.
+Giải quyết từng vấn đề P0/P1/P2 hợp lý; nếu thiếu dữ liệu để khắc phục thì hạ mức khẳng định và đưa vào Limitations, TUYỆT ĐỐI không sáng tác thông tin, số liệu hay nguồn.
+Chỉ sử dụng chứng cứ research được cung cấp, chỉ trích nguồn bằng [S#] có trong danh mục. Không biến giả thuyết thành dữ kiện. Không đổi phạm vi ngành, địa lý, target hoặc giai đoạn. Báo cáo cần hoàn chỉnh và có thể đứng độc lập; không trả về danh sách thay đổi hoặc nhận xét về việc sửa."""
+
 
 def request(client, model, prompt, search=False, max_tokens=4500):
     config = types.GenerateContentConfig(
@@ -101,9 +115,9 @@ def research(topic, market, audience, brand, period, key, model, search, progres
                + "\nPERIOD: " + period[:150] + "\nNgày hiện tại: "
                + datetime.now(timezone.utc).date().isoformat()
                + "\nUser brief chỉ là câu hỏi, không phải nguồn chứng cứ.")
-    progress("1/4 — Research Planner...")
+    progress("1/7 — Research Planner...")
     _, plan = request(client, selected_model, PLAN + "\n\n" + context, max_tokens=1500)
-    progress("2/4 — 4 Research Agents (song song tối đa 2)...")
+    progress("2/7 — 4 Research Agents (song song tối đa 2)...")
     def do_role(name, directive):
         prompt = ("Vai trò: " + name + ". " + directive
                   + "\nTrình bày 5–8 findings có evidence, giới hạn và implications."
@@ -135,13 +149,44 @@ def research(topic, market, audience, brand, period, key, model, search, progres
             references.append("[" + by_url[src["url"]] + "] " + src["title"] + " " + src["url"])
         evidence.append("## " + name + "\n" + (r["answer"] or ("Agent lỗi: " + r["error"]))
                         + "\nGROUNDED SOURCES:\n" + ("\n".join(references) or "KHÔNG CÓ"))
-    progress("3/4 — Strategy Synthesizer...")
+    progress("3/7 — Strategy Synthesizer tạo báo cáo ban đầu...")
     combined = "\n\n".join(evidence)
     _, report = request(client, selected_model, SYNTH + "\n" + context + "\n" + combined[:45000], max_tokens=7500)
-    progress("4/4 — Evidence Auditor...")
+    original_report = report
     refs = "\n".join("[" + s["id"] + "] " + s["title"] + " " + s["url"] for s in sources)
+    # Strictly sequential: Critic_i -> Revise_i -> Critic_(i+1). Never finalize an unchecked revision.
+    review_history = []
+    for iteration in range(1, CRITIQUE_ROUNDS + 1):
+        progress(f"{iteration + 3}/7 — Critical Reviewer: vòng {iteration}/{CRITIQUE_ROUNDS}...")
+        history = "\n\n".join(
+            f"Vòng {entry['round']}:\n{entry['critique'][:2600]}"
+            for entry in review_history
+        )
+        critic_prompt = (
+            CRITIC + "\n\nRESEARCH BRIEF:\n" + context
+            + "\n\nEVIDENCE GỐC (chỉ dữ liệu này làm căn cứ):\n" + combined[:38000]
+            + "\n\nDANH MỤC MÃ NGUỒN HỢP LỆ:\n" + (refs or "KHÔNG CÓ")
+            + "\n\nNHỮNG PHẢN BIỆN VÒNG TRƯỚC (để không lặp máy móc):\n"
+            + (history[:6000] or "Chưa có")
+            + "\n\nBÁO CÁO CẦN PHẢN BIỆN VÒNG NÀY:\n" + report[:28000]
+        )
+        _, critique = request(client, selected_model, critic_prompt, max_tokens=3500)
+        progress(f"{iteration + 3}/7 — Strategy Synthesizer chỉnh sửa sau vòng {iteration}/{CRITIQUE_ROUNDS}...")
+        revision_prompt = (
+            REVISE + "\n\nRESEARCH BRIEF:\n" + context
+            + "\n\nEVIDENCE GỐC:\n" + combined[:38000]
+            + "\n\nDANH MỤC MÃ NGUỒN HỢP LỆ:\n" + (refs or "KHÔNG CÓ")
+            + "\n\nBÁO CÁO HIỆN TẠI:\n" + report[:28000]
+            + "\n\nPHẢN BIỆN CẦN XỬ LÝ:\n" + critique[:15000]
+        )
+        _, revised_report = request(client, selected_model, revision_prompt, max_tokens=7500)
+        if not revised_report.strip():
+            raise RuntimeError(f"Vòng phản biện {iteration}: model không trả về báo cáo sửa. Dừng, không finalize.")
+        report = revised_report
+        review_history.append({"round": iteration, "critique": critique, "revised_report": report})
+    progress("7/7 — Evidence Auditor kiểm tra bản cuối sau 3 vòng phản biện...")
     _, audit = request(client, selected_model, AUDIT + "\nBRIEF:\n" + context
-                       + "\nREPORT:\n" + report[:19000]
+                       + "\nREPORT FINAL SAU 3 VÒNG PHẢN BIỆN:\n" + report[:28000]
                        + "\nVERIFIED SEARCH METADATA:\n" + (refs or "KHÔNG CÓ"), max_tokens=3500)
     warnings = []
     if not search:
@@ -158,8 +203,10 @@ def research(topic, market, audience, brand, period, key, model, search, progres
     if not sources:
         warnings.append("Không có nguồn web được xác minh qua metadata; không nên dùng các con số để ra quyết định.")
     return {"topic": topic, "market": market, "timestamp": datetime.now(timezone.utc).isoformat(),
-            "model": selected_model, "available_models": permitted_models, "plan": plan, "agents": results, "report": report, "audit": audit,
-            "sources": sources, "warnings": warnings}
+            "model": selected_model, "available_models": permitted_models,
+            "plan": plan, "agents": results, "initial_report": original_report,
+            "review_history": review_history, "critique_rounds_completed": len(review_history),
+            "report": report, "audit": audit, "sources": sources, "warnings": warnings}
 
 def linked(text, sources):
     by_id = {s["id"]: s["url"] for s in sources}
@@ -167,7 +214,7 @@ def linked(text, sources):
 
 st.set_page_config(page_title="Market Research AI Lab", page_icon="📊", layout="wide")
 st.title("📊 Market Research AI Lab")
-st.caption("7 Gemini agents · Market / Consumer / Competitor / Trend · Evidence audit")
+st.caption("8 Gemini agents · 3 vòng phản biện độc lập và chỉnh sửa · Final evidence audit")
 password = os.getenv("APP_PASSWORD", "").strip()
 if password and not st.session_state.get("access", False):
     with st.form("login"):
@@ -230,23 +277,40 @@ result = st.session_state.get("result")
 if result:
     for warning in result["warnings"]:
         st.warning(warning)
-    t1, t2, t3, t4 = st.tabs(["📄 Report", "🤖 Agents", "🛡️ Audit", "🔗 Sources"])
+    t1, t2, t3, t4, t5 = st.tabs(["📄 Final report", "🔁 Phản biện (3 vòng)", "🤖 Agents", "🛡️ Audit", "🔗 Sources"])
     with t1:
+        st.success(f"Đã hoàn tất {result.get('critique_rounds_completed', 0)}/3 vòng phản biện và chỉnh sửa trước khi finalize.")
         st.markdown(linked(result["report"], result["sources"]))
     with t2:
+        st.markdown("### Critical Reviewer Agent — 3 vòng phản biện độc lập")
+        st.caption("Mỗi vòng xem xét phiên bản mới nhất, đưa phản biện rồi Strategy Synthesizer sửa toàn bộ báo cáo.")
+        with st.expander("Báo cáo ban đầu (trước phản biện)"):
+            st.markdown(linked(result.get("initial_report", ""), result["sources"]))
+        for entry in result.get("review_history", []):
+            with st.expander(f"Vòng {entry['round']}/3 — Phản biện và bản sửa", expanded=False):
+                st.markdown("**Nhận xét từ Critical Reviewer**")
+                st.markdown(linked(entry["critique"], result["sources"]))
+                st.divider()
+                st.markdown(f"**Báo cáo sau khi sửa vòng {entry['round']}**")
+                st.markdown(linked(entry["revised_report"], result["sources"]))
+    with t3:
         with st.expander("Research Planner"):
             st.markdown(result["plan"])
         for name, agent in result["agents"].items():
             with st.expander(name):
                 st.markdown(agent["answer"] or agent["error"])
-    with t3:
-        st.markdown(linked(result["audit"], result["sources"]))
-        st.caption("Evidence Auditor không thay thế việc đọc báo cáo gốc.")
     with t4:
+        st.markdown(linked(result["audit"], result["sources"]))
+        st.caption("Evidence Auditor kiểm tra bản sau vòng phản biện thứ 3; không thay thế việc đọc báo cáo gốc.")
+    with t5:
         for src in result["sources"]:
             st.markdown("**" + src["id"] + "** — [" + src["title"] + "](" + src["url"] + ") · " + src["role"])
-    md = "# Market Research: " + result["topic"] + "\n\n" + result["report"] + "\n\n## Evidence Audit\n\n" + result["audit"] + "\n\n## Sources\n"
-    md += "\n".join("- [" + s["id"] + "] " + s["title"] + ": " + s["url"] for s in result["sources"])
+    md = "# Market Research: " + result["topic"] + "\n\n" + result["report"]
+    md += "\n\n## Evidence Audit\n\n" + result["audit"]
+    md += "\n\n## Critical review log (3 vòng)"
+    for entry in result.get("review_history", []):
+        md += "\n\n### Vòng " + str(entry["round"]) + " — phản biện\n\n" + entry["critique"]
+    md += "\n\n## Sources\n" + "\n".join("- [" + s["id"] + "] " + s["title"] + ": " + s["url"] for s in result["sources"])
     c1, c2 = st.columns(2)
     with c1:
         st.download_button("⬇️ Markdown", md, "market_research.md", "text/markdown", use_container_width=True)
