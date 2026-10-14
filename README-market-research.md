@@ -18,3 +18,7 @@ Google Search grounding may incur charges. Verify source metadata and numbers ag
 ## Critical review loop
 
 After initial research synthesis, a dedicated Critical Reviewer Agent runs **exactly three sequential critique-and-revision rounds**. Each round critiques the latest report, then Strategy Synthesizer rewrites it using the original evidence; all intermediate critiques and revisions are retained in the UI and JSON export. The final Evidence Auditor checks the final report after all three rounds. If any critique/revision request fails, the app does not mark research finalized. Three rounds increase Gemini API usage; they do not independently validate facts or fetch missing sources.
+
+## Research insight structure
+
+Every one of the nine report sections requires at least five distinct, numbered `**Insight N:**` findings and must finish with exactly one one-sentence `**Key Takeaway:**`. A formatting validator checks this after three critique/revision rounds, with up to two targeted format repairs (not additional critique rounds). If still invalid, the report is not finalized. Unsupported facts must be marked as evidence gaps instead of invented claims.
