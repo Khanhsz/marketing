@@ -10,7 +10,30 @@ import streamlit as st
 from google import genai
 from google.genai import types
 
-MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+PREFERRED_MODELS = ("gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite")
+
+def available_text_models(client):
+    """Ask Google's API which generateContent models this particular key can see."""
+    found = []
+    for entry in client.models.list():
+        name = (getattr(entry, "name", "") or "").removeprefix("models/")
+        actions = getattr(entry, "supported_actions", None) or []
+        if "generateContent" not in actions or not name.startswith("gemini-"):
+            continue
+        if any(bad in name for bad in ("-image", "-tts", "-live", "-audio", "-transcribe", "-embedding")):
+            continue
+        found.append(name)
+    return sorted(set(found), key=lambda n: (PREFERRED_MODELS.index(n) if n in PREFERRED_MODELS else 99, n))
+
+def choose_model(client, preferred):
+    models = available_text_models(client)
+    if not models:
+        raise RuntimeError("Gemini API key không có model tạo văn bản khả dụng. Kiểm tra key hoặc quyền truy cập trong Google AI Studio.")
+    if preferred != "Auto" and preferred in models:
+        return preferred, models
+    return next((m for m in PREFERRED_MODELS if m in models), models[0]), models
+
 ROLES = {
     "Market Analyst": "Quy mô thị trường, growth, segmentation, TAM/SAM/SOM nếu đủ dữ liệu. Mỗi số liệu phải rõ năm, thị trường, đơn vị, định nghĩa.",
     "Consumer Analyst": "Segment, JTBD, pain points, purchase triggers, barriers, customer journey. Phân biệt insight và giả thuyết; không tạo tỷ lệ khảo sát.",
@@ -22,7 +45,7 @@ SYNTH = """Bạn là Strategy Synthesizer. Tổng hợp từ evidence thành bá
 QUAN TRỌNG: chỉ đánh dấu nguồn bằng [S1], [S2], ... từ danh mục có thật trong evidence. Không tạo nguồn, URL, tỷ lệ hay thị phần. Mọi số liệu quan trọng cần kèm nguồn hợp lệ. Phân biệt fact / inference / hypothesis. Khi không có đủ chứng cứ, ghi rõ thiếu dữ liệu."""
 AUDIT = """Bạn là Evidence Auditor độc lập. Kiểm tra tối thiểu 5 kết luận và số liệu quan trọng. Đánh dấu Supported / Weak / Unverified; nói rõ các trường hợp thiếu năm, khu vực, định nghĩa, lỗi suy luận, sai mã nguồn. Không tự nhận đã mở toàn bộ tài liệu. Kết luận cần kiểm tra gì trước khi pitching."""
 
-def request(client, prompt, search=False, max_tokens=4500):
+def request(client, model, prompt, search=False, max_tokens=4500):
     config = types.GenerateContentConfig(
         temperature=0.25,
         max_output_tokens=max_tokens,
@@ -31,7 +54,7 @@ def request(client, prompt, search=False, max_tokens=4500):
     for attempt in range(3):
         try:
             response = client.models.generate_content(
-                model=st.session_state.get("selected_model", MODEL),
+                model=model,
                 contents=prompt,
                 config=config
             )
@@ -44,7 +67,12 @@ def request(client, prompt, search=False, max_tokens=4500):
             if transient and attempt < 2:
                 time.sleep(2 ** attempt)
                 continue
-            raise RuntimeError("Gemini API: " + str(error)[:350]) from error
+            message = str(error)
+            if any(term in message.lower() for term in ("404", "not found", "not available", "unsupported model")):
+                raise RuntimeError("Model " + model + " chưa dùng được với API key này. Chọn Auto hoặc một model khác rồi thử lại.") from error
+            if search and any(term in message.lower() for term in ("403", "400", "permission_denied", "not supported", "not allowed")):
+                raise RuntimeError("Google Search grounding không khả dụng với API key hoặc gói hiện tại. Hãy tắt tùy chọn Google Search grounding trong sidebar rồi thử lại.") from error
+            raise RuntimeError("Gemini API: " + message[:350]) from error
 
 def evidence_sources(response, role):
     out = []
@@ -63,22 +91,25 @@ def evidence_sources(response, role):
     return out
 
 def research(topic, market, audience, brand, period, key, model, search, progress):
-    st.session_state["selected_model"] = model
     client = genai.Client(api_key=key)
+    selected_model, permitted_models = choose_model(client, model)
+    if model != "Auto" and selected_model != model:
+        progress("Model " + model + " không có trong danh sách key này; chuyển sang " + selected_model)
+    progress("Model đang dùng: " + selected_model)
     context = ("YÊU CẦU: " + topic[:4000] + "\nTHỊ TRƯỜNG: " + market[:300]
                + "\nTARGET: " + audience[:500] + "\nBRAND: " + brand[:500]
                + "\nPERIOD: " + period[:150] + "\nNgày hiện tại: "
                + datetime.now(timezone.utc).date().isoformat()
                + "\nUser brief chỉ là câu hỏi, không phải nguồn chứng cứ.")
     progress("1/4 — Research Planner...")
-    _, plan = request(client, PLAN + "\n\n" + context, max_tokens=1500)
+    _, plan = request(client, selected_model, PLAN + "\n\n" + context, max_tokens=1500)
     progress("2/4 — 4 Research Agents (song song tối đa 2)...")
     def do_role(name, directive):
         prompt = ("Vai trò: " + name + ". " + directive
                   + "\nTrình bày 5–8 findings có evidence, giới hạn và implications."
                   + " Nếu không biết hoặc thiếu nguồn, ghi CHƯA KIỂM CHỨNG. KHÔNG sáng tác số liệu."
                   + "\n" + context + "\nRESEARCH PLAN:\n" + plan)
-        resp, answer = request(client, prompt, search=search)
+        resp, answer = request(client, selected_model, prompt, search=search)
         return name, answer, evidence_sources(resp, name)
     results = {}
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -106,10 +137,10 @@ def research(topic, market, audience, brand, period, key, model, search, progres
                         + "\nGROUNDED SOURCES:\n" + ("\n".join(references) or "KHÔNG CÓ"))
     progress("3/4 — Strategy Synthesizer...")
     combined = "\n\n".join(evidence)
-    _, report = request(client, SYNTH + "\n" + context + "\n" + combined[:45000], max_tokens=7500)
+    _, report = request(client, selected_model, SYNTH + "\n" + context + "\n" + combined[:45000], max_tokens=7500)
     progress("4/4 — Evidence Auditor...")
     refs = "\n".join("[" + s["id"] + "] " + s["title"] + " " + s["url"] for s in sources)
-    _, audit = request(client, AUDIT + "\nBRIEF:\n" + context
+    _, audit = request(client, selected_model, AUDIT + "\nBRIEF:\n" + context
                        + "\nREPORT:\n" + report[:19000]
                        + "\nVERIFIED SEARCH METADATA:\n" + (refs or "KHÔNG CÓ"), max_tokens=3500)
     warnings = []
@@ -127,7 +158,7 @@ def research(topic, market, audience, brand, period, key, model, search, progres
     if not sources:
         warnings.append("Không có nguồn web được xác minh qua metadata; không nên dùng các con số để ra quyết định.")
     return {"topic": topic, "market": market, "timestamp": datetime.now(timezone.utc).isoformat(),
-            "model": model, "plan": plan, "agents": results, "report": report, "audit": audit,
+            "model": selected_model, "available_models": permitted_models, "plan": plan, "agents": results, "report": report, "audit": audit,
             "sources": sources, "warnings": warnings}
 
 def linked(text, sources):
@@ -155,9 +186,24 @@ with st.sidebar:
         st.success("Đã có API key bảo mật trên server")
     key = server_key or st.text_input("Gemini API key", type="password",
                                       help="Key chỉ dùng để gửi yêu cầu nghiên cứu, không đưa lên GitHub.")
-    model = st.text_input("Gemini model", value=MODEL)
-    search = st.toggle("Google Search grounding", value=True)
-    st.caption("Google API có quota và có thể phát sinh chi phí. Kiểm tra nguồn trước khi sử dụng.")
+    st.caption("Model mặc định: Gemini 3.8 Flash. Đã ngừng đặt Gemini 2.5 cho key mới.")
+    model = st.selectbox("Gemini model", options=["Auto", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite"], index=0)
+    search = st.toggle("Google Search grounding (cần gói hỗ trợ)", value=False,
+                       help="Các model Gemini 3.x hiện không hỗ trợ Google Search grounding ở Free Tier. Để tắt lỗi 403, để chế độ này OFF.")
+    st.caption("Free Tier Gemini 3.x: chạy AI không bật Grounding; nếu cần tìm nguồn web tự động, tài khoản Google API có thể phải kích hoạt thanh toán.")
+    if st.button("🔍 Kiểm tra API & model khả dụng"):
+        if not key:
+            st.error("Chưa có GEMINI_API_KEY.")
+        else:
+            try:
+                known = available_text_models(genai.Client(api_key=key))
+                if known:
+                    st.success("Kết nối model list thành công. Có " + str(len(known)) + " text models.")
+                    st.write(", ".join(known[:20]))
+                else:
+                    st.warning("Không thấy text models phù hợp trên key này.")
+            except Exception as exc:
+                st.error("Không kiểm tra được danh sách model: " + str(exc)[:250])
 with st.form("brief"):
     topic = st.text_area("Research brief", value="Phân tích thị trường điều hòa thông minh tại Việt Nam: category, consumer, competitors, trends và cơ hội định vị.", height=120)
     left, right = st.columns(2)
