@@ -229,8 +229,21 @@ def export_pptx(deck, sources):
     prs.save(buf)
     return buf.getvalue()
 
+def _navigate_slide(delta, total_slides):
+    """Streamlit callbacks run before widgets are instantiated on the next rerun."""
+    current = st.session_state.get("slide_choice", 0)
+    st.session_state["slide_choice"] = max(0, min(total_slides - 1, current + delta))
+
+
 def show(deck, sources):
     slides = deck["slides"]
+    if not slides:
+        st.warning("Deck chưa có slide nào.")
+        return
+    # When a new case has a different slide count, reset out-of-range selection BEFORE selectbox.
+    if (not isinstance(st.session_state.get("slide_choice"), int)
+            or st.session_state.get("slide_choice", 0) not in range(len(slides))):
+        st.session_state["slide_choice"] = 0
     st.caption(f"{len(slides)} editable slides · 16:9 · Strategic case pitch")
     n = st.selectbox("Slide", range(len(slides)), key="slide_choice",
          format_func=lambda i: f"{i+1:02d} — {slides[i]['section']}")
@@ -238,15 +251,13 @@ def show(deck, sources):
     st.markdown(slide_html(slides[n]), unsafe_allow_html=True)
     col_a, col_b, col_c = st.columns([1, 2, 1])
     with col_a:
-        if st.button("← Trước", disabled=(n==0)):
-            st.session_state["slide_choice"] = n-1
-            st.rerun()
+        st.button("← Trước", disabled=(n==0),
+                  on_click=_navigate_slide, args=(-1, len(slides)))
     with col_b:
         st.caption(f"Slide {n+1} / {len(slides)} · Layout {slides[n]['layout']}")
     with col_c:
-        if st.button("Tiếp →", disabled=(n==len(slides)-1)):
-            st.session_state["slide_choice"] = n+1
-            st.rerun()
+        st.button("Tiếp →", disabled=(n==len(slides)-1),
+                  on_click=_navigate_slide, args=(1, len(slides)))
     with st.expander("Speaker notes & sources"):
         st.write(slides[n]["presenter_note"])
         for sid in slides[n]["source_ids"]:
