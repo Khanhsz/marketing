@@ -10,7 +10,7 @@ import streamlit as st
 from google import genai
 from google.genai import types
 
-MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 CRITIQUE_ROUNDS = 3
 INSIGHTS_PER_SECTION = 5
 REPORT_SECTIONS = (
@@ -38,7 +38,7 @@ REPORT_FORMAT_GUIDE = """
 - Key Takeaway không phải một ý Research Insight mới. Không được gộp các mục, không được bỏ mục vì thiếu dữ liệu.
 Tên 9 mục: Executive Summary; Market Landscape; Consumer Insights; Competitor Analysis; Trends & PESTEL; SWOT Analysis; Strategic Opportunities; Recommendations; Limitations & Data Gaps.
 """
-PREFERRED_MODELS = ("gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite")
+PREFERRED_MODELS = ("gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.8-flash")
 
 def available_text_models(client):
     """Ask Google's API which generateContent models this particular key can see."""
@@ -345,8 +345,8 @@ with st.sidebar:
         st.success("Đã có API key bảo mật trên server")
     key = server_key or st.text_input("Gemini API key", type="password",
                                       help="Key chỉ dùng để gửi yêu cầu nghiên cứu, không đưa lên GitHub.")
-    st.caption("Model mặc định: Gemini 3.8 Flash. Đã ngừng đặt Gemini 2.5 cho key mới.")
-    model = st.selectbox("Gemini model", options=["Auto", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite"], index=0)
+    st.caption("Mặc định Free Tier: Gemini 3.5 Flash-Lite. Nếu API key không hỗ trợ, hệ thống sẽ tự chọn model khả dụng khác.")
+    model = st.selectbox("Gemini model", options=["gemini-3.5-flash-lite", "Auto", "gemini-3.6-flash", "gemini-3.8-flash"], index=0)
     search = st.toggle("Google Search grounding (cần gói hỗ trợ)", value=False,
                        help="Các model Gemini 3.x hiện không hỗ trợ Google Search grounding ở Free Tier. Để tắt lỗi 403, để chế độ này OFF.")
     st.caption("Free Tier Gemini 3.x: chạy AI không bật Grounding; nếu cần tìm nguồn web tự động, tài khoản Google API có thể phải kích hoạt thanh toán.")
